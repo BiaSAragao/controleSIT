@@ -5,12 +5,12 @@ from database import get_connection
 
 st.set_page_config(layout="wide")
 
+st.title("📊 Dashboard Financeiro e Operacional")
+
 engine = get_connection()
 
-st.title("📊 Dashboard do Sistema")
-
 # ----------------------------
-# CARREGAMENTO COM CACHE
+# CARREGAR DADOS
 # ----------------------------
 @st.cache_data
 def carregar_dados():
@@ -19,76 +19,111 @@ def carregar_dados():
 
 df = carregar_dados()
 
-# ----------------------------
-# DEBUG (pode remover depois)
-# ----------------------------
-st.write("Total de registros:", len(df))
-
 if df.empty:
     st.warning("Nenhum dado encontrado na view.")
     st.stop()
 
-# Garantir tipo datetime
+# ----------------------------
+# TRATAMENTO
+# ----------------------------
 df["periodo"] = pd.to_datetime(df["periodo"], errors="coerce")
-
-# Remover linhas inválidas
 df = df.dropna(subset=["periodo"])
-
-# Ordenar por período
 df = df.sort_values("periodo")
 
+df["ano"] = df["periodo"].dt.year
+df["mes"] = df["periodo"].dt.month
+
+df["total_recebido"] = df["receita"] + df["subsidio"]
+
+df["percentual_subsidio"] = (
+    df["subsidio"] / df["total_recebido"]
+) * 100
+
 # ----------------------------
-# FILTROS
+# FILTRO
 # ----------------------------
 empresas = st.multiselect(
-    "Filtrar Empresa",
-    options=df["nome"].unique(),
+    "Selecione a(s) empresa(s)",
+    df["nome"].unique(),
     default=df["nome"].unique()
 )
 
 df = df[df["nome"].isin(empresas)]
 
-# ----------------------------
-# RECEITA vs SUBSÍDIO
-# ----------------------------
-st.subheader("💰 Receita vs Subsídio")
+# ============================
+# 1️⃣ RECEITA AO LONGO DO ANO
+# ============================
+st.subheader("📈 Receita ao longo do Ano")
 
-fig1 = px.bar(
+fig1 = px.line(
     df,
     x="periodo",
-    y=["receita", "subsidio"],
+    y="receita",
     color="nome",
-    barmode="group",
+    markers=True
 )
 
 st.plotly_chart(fig1, use_container_width=True)
 
-# ----------------------------
-# SUBSÍDIO POR KM
-# ----------------------------
-if "subsidio_por_km" in df.columns:
+# ============================
+# 2️⃣ SUBSÍDIO AO LONGO DO ANO
+# ============================
+st.subheader("💰 Subsídio ao longo do Ano")
 
-    st.subheader("🚍 Subsídio por KM")
-
-    fig2 = px.bar(
-        df,
-        x="periodo",
-        y="subsidio_por_km",
-        color="nome",
-    )
-
-    st.plotly_chart(fig2, use_container_width=True)
-
-# ----------------------------
-# RANKING
-# ----------------------------
-st.subheader("🏆 Ranking de Empresas por Subsídio")
-
-ranking = (
-    df.groupby("nome")["subsidio"]
-    .sum()
-    .sort_values(ascending=False)
-    .reset_index()
+fig2 = px.line(
+    df,
+    x="periodo",
+    y="subsidio",
+    color="nome",
+    markers=True
 )
 
-st.dataframe(ranking, use_container_width=True)
+st.plotly_chart(fig2, use_container_width=True)
+
+# ==============================================
+# 3️⃣ % DE SUBSÍDIO SOBRE TOTAL RECEBIDO (MÊS)
+# ==============================================
+st.subheader("📊 Percentual de Subsídio sobre o Total Recebido (Mensal)")
+
+fig3 = px.bar(
+    df,
+    x="periodo",
+    y="percentual_subsidio",
+    color="nome",
+    text=df["percentual_subsidio"].round(1)
+)
+
+fig3.update_traces(textposition="outside")
+fig3.update_layout(yaxis_title="% Subsídio")
+
+st.plotly_chart(fig3, use_container_width=True)
+
+# ==================================
+# 4️⃣ KM PERCORRIDOS POR MÊS
+# ==================================
+st.subheader("🚌 Quilômetros Percorridos por Mês")
+
+fig4 = px.bar(
+    df,
+    x="periodo",
+    y="km_total",
+    color="nome",
+)
+
+st.plotly_chart(fig4, use_container_width=True)
+
+# ==================================================
+# 5️⃣ RELAÇÃO FATURAMENTO x KM RODADO
+# ==================================================
+st.subheader("📉 Relação entre Faturamento e KM Rodado")
+
+fig5 = px.scatter(
+    df,
+    x="km_total",
+    y="receita",
+    color="nome",
+    size="subsidio",
+    hover_data=["periodo"],
+)
+
+st.plotly_chart(fig5, use_container_width=True)
